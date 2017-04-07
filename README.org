@@ -1,0 +1,30 @@
+* Warning!
+
+This library isn't working yet.
+
+* Quad Tree
+
+If binary trees split lines, then quad trees split planes. A quad tree is like a binary tree, but there are four sub trees that correspond to four different quadrants. The quad tree implemented here contains all values at the leaf nodes. This tree also uses buckets. Every leaf contains a small list of values. A leaf node won't split until its bucket overflows. The bucket prevents the tree from becoming deep too quickly.
+
+* Interface
+
+#+BEGIN_SRC lisp
+;; Create a tree that covers the given area. The bucket size will default to 1.
+(make-quad-tree real-region)
+
+;; Create a tree that covers the given area and has leaves with the given bucket size.
+(make-quad-tree real-region bucket-size)
+
+;; Return a new tree that is equal to the old tree, but with point-box inserted into it.
+(quad-tree-insert tree point-box)
+
+;; Return a new tree that is equal to the old tree, but with the val removed from it.
+(quad-tree-remove tree val)
+
+;; Find the value at the given location.
+(quad-tree-locate-position tree location)
+
+;; Return all values within the given region.
+(quad-tree-locate-area tree bound)
+
+#+END_SRC
