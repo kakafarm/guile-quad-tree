@@ -1,4 +1,4 @@
-<(define-module (quad-tree)
+(define-module (quad-tree)
   #:use-module (ice-9 match)
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-1)
@@ -166,6 +166,7 @@
   (bucket-size quad-tree-bucket-size))
 
 (define (make-even-region real-region)
+  "Takes a region and returns the smallest region that contains it, but has dimensions that are a power of 2."
   real-region)
 
 (define make-quad-tree
