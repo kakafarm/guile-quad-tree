@@ -1,5 +1,6 @@
 (define-module (quad-tree)
   #:use-module (ice-9 match)
+  #:use-module (ice-9 format)
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-1)
   #:export (make-quad-tree
@@ -183,8 +184,10 @@
 	(even-bound (quad-tree-even-bound tree))
 	(real-bound (quad-tree-real-bound tree)))
     (unless (region-includes? real-bound point-box)
-      (error "fuck"))
-    (%make-quad-tree 
+      (error (format #f
+		     "The point ~a is not inside the region ~a of this tree."
+		     point-box real-bound)))
+    (%make-quad-tree
      (remove-helper old-root
 		    bucket-size
 		    even-bound
