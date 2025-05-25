@@ -252,7 +252,7 @@
   (items leaf-node-items))
 
 (define (insert-helper node bucket-size region point-box)
-  (cond (((branch-node? node))
+  (cond ((branch-node? node)
 	 (case (region-quadrant region point-box)
 	   ((ne origin)
 	    (make-branch-node (insert-helper (branch-node-ne node)
@@ -285,22 +285,22 @@
 			      (insert-helper (branch-node-se node)
 					     bucket-size
 					     region
-					     point-box))))
-	 ((leaf-node? node)
-	  (let ((items (leaf-node-items node)))
-	    (if (> (1+ (length items)) bucket-size)
-		(fold (lambda (node item)
-			(insert-helper node bucket-size
-				       region point-box))
-		      (make-branch-node (make-leaf-node (list))
-					(make-leaf-node (list))
-					(make-leaf-node (list))
-					(make-leaf-node (list)))
-		      (cons point-box items))
-		(make-leaf-node (cons point-box items))))))))
+					     point-box)))))
+	((leaf-node? node)
+	 (let ((items (leaf-node-items node)))
+	   (if (> (1+ (length items)) bucket-size)
+	       (fold (lambda (node item)
+		       (insert-helper node bucket-size
+				      region point-box))
+		     (make-branch-node (make-leaf-node (list))
+				       (make-leaf-node (list))
+				       (make-leaf-node (list))
+				       (make-leaf-node (list)))
+		     (cons point-box items))
+	       (make-leaf-node (cons point-box items)))))))
 
 (define (remove-helper node bucket-size point-box val)
-  (cond (((branch-node? node))
+  (cond ((branch-node? node)
 	 (case (region-quadrant region point-box)
 	   ((ne origin)
 	    (make-branch-node (remove-helper (branch-node-ne node)
@@ -333,12 +333,12 @@
 			      (remove-helper (branch-node-se node)
 					     bucket-size
 					     point-box
-					     val))))
-	 ((leaf-node? node)
-	  (make-leaf-node (delete val (leaf-node-items node)))))))
+					     val)))))
+	((leaf-node? node)
+	 (make-leaf-node (delete val (leaf-node-items node))))))
 
 (define (locate-position-helper node bucket-size region point-box)
-  (cond (((branch-node? node))
+  (cond ((branch-node? node)
 	 (case (region-quadrant region point-box)
 	   ((ne origin)
 	    (make-branch-node (locate-position-helper
@@ -371,12 +371,12 @@
 			      (location-position-helper
 			       (branch-node-se node)
 			       bucket-size
-			       position))))
-	 ((leaf-node? node)
-	  #:f))))
+			       position)))))
+	((leaf-node? node)
+	 #:f)))
 
 (define (locate-area-helper node bucket-size bound)
-  (cond (((branch-node? node)
-	  #:f)
-	 ((leaf-node? node)
-	  #:f))))
+  (cond ((branch-node? node)
+	 #:f)
+	((leaf-node? node)
+	 #:f)))
