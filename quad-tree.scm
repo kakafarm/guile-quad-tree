@@ -25,9 +25,6 @@
 	    quad-tree-locate-position
 	    quad-tree-locate-area))
 
-(define (add1 n)
-  (+ 1 n))
-
 ;; Same position could lead to an infinite loop of subdivisions.
 ;; Check for given bounds, but use a power of 2 for actual bounds.
 (define (log2 n)
@@ -291,7 +288,7 @@
 					     point-box))))
 	 ((leaf-node? node)
 	  (let ((items (leaf-node-items node)))
-	    (if (> (add1 (length items)) bucket-size)
+	    (if (> (1+ (length items)) bucket-size)
 		(fold (lambda (node item)
 			(insert-helper node bucket-size
 				       region point-box))
