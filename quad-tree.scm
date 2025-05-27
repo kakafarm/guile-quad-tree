@@ -91,6 +91,19 @@
     y)))
 
 (define (region-quadrant region point-box)
+  "Find on which quadrant of a @var{region} a @var{point-box} falls on.
+
+On a Cartesian plane, with the center of @var{region} placed on the Cartesian plane's origin:
+
+Return @code{origin} if @var{point-box} is on the Cartesian origin.
+
+Return @code{ne} if @var{point-box} is within @var{region} and within quadrant I of the Cartesian plane, or the segment of X axis just below quadrant I.
+
+Return @code{nw} if @var{point-box} is within @var{region} and within quadrant II of the Cartesian plane, or the segment of Y axis just to the right of quadrant II.
+
+Return @code{sw} if @var{point-box} is within @var{region} and within quadrant III of the Cartesian plane, or the segment of X axis just above quadrant III.
+
+Return @code{se} if @var{point-box} is within @var{region} and within quadrant IV of the Cartesian plane, or the segment of Y axis just to the left quadrant IV."
   (let* ((x (vx (point-box-position point-box)))
 	 (y (vy (point-box-position point-box)))
 	 (x-low (region-x-low region))
@@ -288,16 +301,16 @@
 					     point-box)))))
 	((leaf-node? node)
 	 (let ((items (leaf-node-items node)))
-	   (if (> (1+ (length items)) bucket-size)
-	       (fold (lambda (node item)
+	   (if (< (length items) bucket-size)
+               (make-leaf-node (cons point-box items))
+               (fold (lambda (node item)
 		       (insert-helper node bucket-size
-				      region point-box))
+                                      region point-box))
 		     (make-branch-node (make-leaf-node (list))
 				       (make-leaf-node (list))
 				       (make-leaf-node (list))
 				       (make-leaf-node (list)))
-		     (cons point-box items))
-	       (make-leaf-node (cons point-box items)))))))
+		     (cons point-box items)))))))
 
 (define (remove-helper node bucket-size point-box val)
   (cond ((branch-node? node)
