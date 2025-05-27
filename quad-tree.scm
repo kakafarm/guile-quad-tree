@@ -201,7 +201,7 @@
 		     "The point ~a is not inside the region ~a of this tree."
 		     point-box real-bound)))
     (%make-quad-tree
-     (remove-helper old-root
+     (insert-helper old-root
 		    bucket-size
 		    even-bound
 		    point-box)
