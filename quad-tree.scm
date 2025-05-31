@@ -93,6 +93,8 @@
 (define (region-quadrant region point-box)
   "Find on which quadrant of a @var{region} a @var{point-box} falls on.
 
+@var{point-box} must be contained within @var{region}, otherwise an error is raised.
+
 On a Cartesian plane, with the center of @var{region} placed on the Cartesian plane's origin:
 
 Return @code{origin} if @var{point-box} is on the Cartesian origin.
@@ -135,6 +137,8 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
 	  ((and (= x x-center)
 		(= y y-center))
 	   'origin))))
+          (else
+           (error "X and Y must be contained within REGION:" x y region)))))
 
 (define (region-north-east region)
   (make-region (/ (+ (region-x-low region)
