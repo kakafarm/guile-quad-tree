@@ -136,7 +136,7 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
 	   'se)
 	  ((and (= x x-center)
 		(= y y-center))
-	   'origin))))
+	   'origin)
           (else
            (error "X and Y must be contained within REGION:" x y region)))))
 
