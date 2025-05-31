@@ -25,12 +25,6 @@
 	    quad-tree-locate-position
 	    quad-tree-locate-area))
 
-;; Same position could lead to an infinite loop of subdivisions.
-;; Check for given bounds, but use a power of 2 for actual bounds.
-(define (log2 n)
-  "Take the log of a number using base 2."
-  (/ (log n) (log 2)))
-
 ;; Point boxes contain values and can be used in the quad tree.
 ;; TODO use vector from sly instead of custom vector
 (define-record-type <point-box>
@@ -184,72 +178,60 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
 ;; The quad tree object is a wrapper over the recursively defined
 ;; node chain. The quad tree object contains several pieces of
 ;; meta data about the tree. The amount of items that can be stored on
-;; a leaf node. The bounds of the quad-tree. And the smallest bounds
-;; with dimensions that are a power of 2 that contain the bounds of the quad-tree
-;; A quad tree must have even bounds to subdivide properly. The real bounds are
-;; saved to check inserted nodes to make sure they're in bounds.
+;; a leaf node. The bounds of the quad-tree.
 (define-record-type <quad-tree>
-  (%make-quad-tree root real-bound even-bound bucket-size)
+  (%make-quad-tree root bounds bucket-size)
   quad-tree?
   (root quad-tree-root)
-  (real-bound quad-tree-real-bound)
-  (even-bound quad-tree-even-bound)
+  (bounds quad-tree-bounds)
   (bucket-size quad-tree-bucket-size))
-
-(define (make-even-region real-region)
-  "Takes a region and returns the smallest region that contains it, but has dimensions that are a power of 2."
-  real-region)
 
 (define make-quad-tree
   (case-lambda
     ((real-region bucket-size)
-     (%make-quad-tree (list) real-region (make-even-region real-region)  bucket-size))
+     (%make-quad-tree (list) region  bucket-size))
     ((real-region)
-     (%make-quad-tree (list) real-region (make-even-region real-region) 1))))
+     (%make-quad-tree (list) region 1))))
 
 (define (quad-tree-insert tree point-box)
   "Return TREE with VAL added. The original tree will not be modified. Destructive operations on the new tree may affect the old tree."
   (let ((old-root (quad-tree-root tree))
 	(bucket-size (quad-tree-bucket-size tree))
-	(even-bound (quad-tree-even-bound tree))
-	(real-bound (quad-tree-real-bound tree)))
-    (unless (region-includes? real-bound point-box)
+	(bounds (quad-tree-bounds tree)))
+    (unless (region-includes? bounds point-box)
       (error (format #f
 		     "The point ~a is not inside the region ~a of this tree."
-		     point-box real-bound)))
+		     point-box bounds)))
     (%make-quad-tree
      (insert-helper old-root
 		    bucket-size
-		    even-bound
+		    bounds
 		    point-box)
      bucket-size
-     even-bound
-     real-bound)))
+     bounds)))
 
 (define (quad-tree-locate-position tree location)
   "Find the value in the TREE at the given LOCATION."
   (locate-position-helper (quad-tree-root tree)
 			  (quad-tree-bucket-size tree)
-			  (quad-tree-even-bound tree)))
+			  (quad-tree-bounds tree)))
 
-(define (quad-tree-locate-area tree bound)
-  "Find all values in the given TREE and the given BOUND."
+(define (quad-tree-locate-area tree bounds)
+  "Find all values in the given TREE and the given BOUNDS."
   (locate-area-helper (quad-tree-root tree)))
 
 (define (quad-tree-remove tree val)
     "Return TREE with VAL removed. The original tree will not be modified. Destructive operations on the new tree may affect the old tree."
   (let ((old-root (quad-tree-root tree))
 	(bucket-size (quad-tree-bucket-size tree))
-	(even-bound (quad-tree-even-bound tree))
-	(real-bound (quad-tree-real-bound tree)))
+	(bounds (quad-tree-bounds tree)))
     (%make-quad-tree
      (remove-helper old-root
 		    bucket-size
-		    even-bound
+		    bounds
 		    val)
      bucket-size
-     even-bound
-     real-bound)))
+     bounds)))
 
 ;; A node that represents a four way split in the tree.
 ;; Contains four sub nodes and no values.
@@ -392,7 +374,7 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
 	((leaf-node? node)
 	 #:f)))
 
-(define (locate-area-helper node bucket-size bound)
+(define (locate-area-helper node bucket-size bounds)
   (cond ((branch-node? node)
 	 #:f)
 	((leaf-node? node)
