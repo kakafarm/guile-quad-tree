@@ -174,7 +174,7 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
 
 (define* (make-quad-tree region #:optional bucket-size)
   (let ((bucket-size (if bucket-size bucket-size 1)))
-    (%make-quad-tree (make-leaf-node '()) region  bucket-size)))
+    (%make-quad-tree (make-leaf-node '()) region bucket-size)))
 
 (define (quad-tree-insert tree x y value)
   "Return TREE with VAL added. The original tree will not be modified. Destructive operations on the new tree may affect the old tree."
@@ -190,8 +190,8 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
                     bucket-size
                     bounds
                     (make-point-box x y value))
-     bucket-size
-     bounds)))
+     bounds
+     bucket-size)))
 
 (define (quad-tree-locate-position tree x y)
   "Find the value in the TREE at the given LOCATION."
@@ -216,8 +216,8 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
                     bucket-size
                     bounds
                     val)
-     bucket-size
-     bounds)))
+     bounds
+     bucket-size)))
 
 (define (insert-helper node bucket-size region point-box)
   (cond ((branch-node? node)
@@ -258,7 +258,7 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
          (let ((items (leaf-node-items node)))
            (if (< (length items) bucket-size)
                (make-leaf-node (cons point-box items))
-               (fold (lambda (node item)
+               (fold (lambda (point-box node)
                        (insert-helper node
                                       bucket-size
                                       region
