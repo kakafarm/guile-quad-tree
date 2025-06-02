@@ -4,7 +4,7 @@
  (quad-tree no-boxes)
  )
 
-(test-begin "QUAD-TREE")
+(test-begin "QUAD-TREE-NO-BOXES")
 
 (define (pair->xy pair)
   (values (car pair) (cdr pair)))
