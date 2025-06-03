@@ -228,7 +228,27 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
      bounds
      bucket-size)))
 
-(define (list-replace-and-length item item-list =?)
+(define (list-replace-or-length new-item item-list =?)
+  "Return the @var{item-list}, whether it was changed, and its length.
+
+If there is an item in @var{item-list} that is equal to @var{new-item} according to the equality procedure @var{=?}, return:
+
+- @var{item-list} with only the first item in @var{item-list} from the
+left replaced with @var{new-item}.
+
+- The value #t representing that the item was replaced.
+
+- The value #f because we do not care about length.
+
+If there is no item in @var{item-list} equal to @var{new-item}
+according to @var{=?}, return:
+
+- @var{item-list} with its elements unchanged.
+
+- The value #f representing that there was no change in the values of
+the returned list in comparison to the input @var{item-list}.
+
+- The length of @var{item-list}."
   (let loop ((item-list item-list)
              (replaced #f)
              (count 0))
@@ -237,11 +257,10 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
        (values '() replaced count))
       ((old-item . rest-of-items)
        (cond
-        ((=? old-item item)
-         (values (cons item rest-of-items)
+        ((=? old-item new-item)
+         (values (cons new-item rest-of-items)
                  #t
-                 (+ (1+ count)
-                    (length rest-of-items))))
+                 #f))
         (else
          (let-values (((new-list replaced new-count)
                        (loop rest-of-items
