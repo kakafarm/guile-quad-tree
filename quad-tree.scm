@@ -288,12 +288,6 @@ the returned list in comparison to the input @var{item-list}.
                    new-count))))))))
 
 (define (insert-helper node bucket-size region point-box)
-  '(format #t "insert-helper:
-    node: ~S
-    bucket-size: ~S
-    region: ~S
-    point-box: ~S
-" node bucket-size region point-box)
   (cond ((branch-node? node)
          (case (region-quadrant region (point-box-x point-box) (point-box-y point-box))
            ((ne origin)
