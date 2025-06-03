@@ -17,8 +17,9 @@
 (define-module (quad-tree)
   #:use-module (ice-9 match)
   #:use-module (ice-9 format)
-  #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-1)
+  #:use-module (srfi srfi-9)
+  #:use-module (srfi srfi-11)
   #:export (
             make-region
             make-quad-tree
@@ -44,6 +45,14 @@
   (x-high region-x-high)
   (y-low region-y-low)
   (y-high region-y-high))
+
+(define (point-box-position-equal? point-box-a point-box-b)
+  (match-let ((($ <point-box> a-x a-y _)
+               point-box-a)
+              (($ <point-box> b-x b-y _)
+               point-box-b))
+    (and (= a-x b-x)
+         (= a-y b-y))))
 
 (define (region-includes? region x y)
   (and (<= (region-x-low region)
@@ -218,6 +227,29 @@ Return @code{se} if @var{point-box} is within @var{region} and within quadrant I
                     val)
      bounds
      bucket-size)))
+
+(define (list-replace-and-length item item-list =?)
+  (let loop ((item-list item-list)
+             (replaced #f)
+             (count 0))
+    (match item-list
+      ('()
+       (values '() replaced count))
+      ((old-item . rest-of-items)
+       (cond
+        ((=? old-item item)
+         (values (cons item rest-of-items)
+                 #t
+                 (+ (1+ count)
+                    (length rest-of-items))))
+        (else
+         (let-values (((new-list replaced new-count)
+                       (loop rest-of-items
+                             replaced
+                             (1+ count))))
+           (values (cons old-item new-list)
+                   replaced
+                   new-count))))))))
 
 (define (insert-helper node bucket-size region point-box)
   (cond ((branch-node? node)
