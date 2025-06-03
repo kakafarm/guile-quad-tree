@@ -17,10 +17,16 @@
 (define position-y (/ 2))
 (define value 'poop)
 
-(define quad-tree (quad-tree-insert empty-quad-tree
-                                    position-x
-                                    position-y
-                                    'poop))
+(define quad-tree (quad-tree-insert
+                   (quad-tree-insert empty-quad-tree
+                                     position-x
+                                     position-y
+                                     'poop)
+                   (/ 3)
+                   (/ 3)
+                   'moo))
+
+(format #t "quad-tree: ~S~%" quad-tree)
 
 (define (make-item denominator)
   (let* ((enumerator-x (random (1+ denominator)))
@@ -51,15 +57,6 @@
     (match items
       ('() quad-tree)
       (((x y value) . rest-of-items)
-       (format #t "quad-tree:~%")
-       (pretty-print quad-tree)
-       (format #t "x: ~S
-y: ~S
-value: ~S
-"
-               x
-               y
-               value)
        (loop (quad-tree-insert quad-tree
                                x
                                y
