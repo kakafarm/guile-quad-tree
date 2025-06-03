@@ -63,7 +63,7 @@
            (region-y-high region))))
 
 (define (region-quadrant region x y)
-  "Find on which quadrant of @var{region} coordinate (@var{x},@var{y}) falls.
+  "Find on which quadrant of @var{region} the coordinate given by @var{x} and @var{y} falls.
 
 The coordinate (@var{x}, @var{y}) must be contained within
 @var{region}, otherwise an error is raised.
@@ -203,7 +203,11 @@ just to the left quadrant IV."
     (%make-quad-tree (make-leaf-node '()) region bucket-size)))
 
 (define (quad-tree-insert tree x y value)
-  "Return TREE with VAL added. The original tree will not be modified. Destructive operations on the new tree may affect the old tree."
+  "Return @var{tree} with @{value} added.
+
+The original tree will not be modified.
+
+Destructive operations on the new tree may affect the old tree."
   (let ((old-root (quad-tree-root tree))
         (bucket-size (quad-tree-bucket-size tree))
         (bounds (quad-tree-bounds tree)))
@@ -220,7 +224,7 @@ just to the left quadrant IV."
      bucket-size)))
 
 (define (quad-tree-locate-position tree x y)
-  "Find the value in the TREE at the given LOCATION."
+  "Find the value stored in @var{tree} at the coordinate given by @var{x} and @var{y}."
   (locate-position-helper (quad-tree-root tree)
                           (quad-tree-bucket-size tree)
                           (quad-tree-bounds tree)
