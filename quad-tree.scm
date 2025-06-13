@@ -29,6 +29,23 @@
             quad-tree-locate-area
             ))
 
+(cond-expand
+ (hoot
+  ;; XXX: At the time of writing this code, Hoot does not support:
+  ;;
+  ;; (@ (srfi srfi-1) delete).
+  (define* (delete x lst #:optional (= equal?))
+    (reverse
+     (fold
+      (lambda (lst-element accumulator)
+        (if (= x lst-element)
+            accumulator
+            (cons lst-element accumulator)))
+      '()
+      lst))))
+ (else
+  ))
+
 ;; Point boxes contain values and can be used in the quad tree.
 ;; TODO use vector from sly instead of custom vector
 (define-record-type <point-box>
