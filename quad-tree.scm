@@ -35,10 +35,11 @@
 ;;; Code:
 
 (define-module (quad-tree)
-  #:use-module (ice-9 match)
   #:use-module (srfi srfi-1)
   #:use-module (srfi srfi-9)
   #:use-module (srfi srfi-11)
+  #:use-module (ice-9 match)
+  #:use-module (statprof)
   #:export (
             make-region
             region-x-low
@@ -56,8 +57,28 @@
             quad-tree-locate-position
             quad-tree-locate-area
             quad-tree-locate-region
+            quad-tree-locate-circle
 
             quad-tree-boundaries
+
+            make-circle
+            circle?
+            circle-x
+            circle-y
+            circle-radius
+
+            point-box-x
+            point-box-y
+            point-box-value
+
+            region-intersects-region?
+            region-intersects-circle?
+
+            coordinate-in-region?            
+            coordinate-in-circle?
+
+            region-subset-of-circle?
+            region-subset-of-region?
             ))
 
 (cond-expand
@@ -94,8 +115,25 @@
   (y-low region-y-low)
   (y-high region-y-high))
 
+(define (region-x-center region)
+  (/ (+ (region-x-low region)
+        (region-x-high region))
+     2))
+
+(define (region-y-center region)
+  (/ (+ (region-y-low region)
+        (region-y-high region))
+     2))
+
+(define-record-type <circle>
+  (make-circle x y radius)
+  circle?
+  (x circle-x)
+  (y circle-y)
+  (radius circle-radius))
+
 (define* (make-region #:key x-low x-high y-low y-high)
-  (when (not (and x-low x-high y-low y-high))
+  (unless (and x-low x-high y-low y-high)
     (error "All arguments must be provided." x-low x-high y-low y-high))
   (%make-region x-low x-high y-low y-high))
 
@@ -107,7 +145,7 @@
     (and (= a-x b-x)
          (= a-y b-y))))
 
-(define (region-includes-coordinate? region x y)
+(define (coordinate-in-region? x y region)
   (and (<= (region-x-low region)
            x
            (region-x-high region))
@@ -125,7 +163,14 @@
            (< (region-y-high region-b)
               (region-y-low region-a)))))
 
-(define (region-quadrant region x y)
+(define (region-subset-of-region? region-a region-b)
+  "Returns true if and only if @var{region-a} is subset of @var{region-b}."
+  (match-let ([($ <region> a-x-low a-x-high a-y-low a-y-high) region-a]
+              [($ <region> b-x-low b-x-high b-y-low b-y-high) region-b])
+    (and (<= b-x-low a-x-low a-x-high b-x-high)
+         (<= b-y-low a-y-low a-y-high b-y-high))))
+
+(define (region-quadrant region point-x point-y)
   "Find on which quadrant of @var{region} the coordinate given by @var{x} and @var{y} falls.
 
 The coordinate (@var{x}, @var{y}) must be contained within
@@ -151,46 +196,32 @@ just above quadrant III.
 Return @code{se} if (@var{x}, @var{y}) is within @var{region} and
 within quadrant IV of the Cartesian plane, or the segment of Y axis
 just to the left quadrant IV."
-  (let* ((x-low (region-x-low region))
-         (x-high (region-x-high region))
-         (y-low (region-y-low region))
-         (y-high (region-y-high region))
-         (x-center (/ (+ x-low x-high) 2))
-         (y-center (/ (+ y-low y-high) 2)))
-    (cond ((and (< x-center x)
-                (<= x x-high)
-                (<= y-center y)
-                (<= y y-high))
+  (match-let ((($ <region> x-low x-high y-low y-high) region)
+              (x-center (region-x-center region))
+              (y-center (region-y-center region)))
+    (cond ((and (< x-center point-x) (<= point-x x-high)
+                (<= y-center point-y) (<= point-y y-high))
            'ne)
-          ((and (<= x-low x)
-                (<= x x-center)
-                (< y-center y)
-                (<= y y-high))
+          ((and (<= x-low point-x) (<= point-x x-center)
+                (< y-center point-y) (<= point-y y-high))
            'nw)
-          ((and (<= x-low x)
-                (< x x-center)
-                (<= y-low y)
-                (<= y y-center))
+          ((and (<= x-low point-x) (< point-x x-center)
+                (<= y-low point-y) (<= point-y y-center))
            'sw)
-          ((and (<= x-center x)
-                (<= x x-high)
-                (<= y-low y)
-                (< y y-center))
+          ((and (<= x-center) (<= point-x x-high)
+                (<= y-low point-y) (< point-y y-center))
            'se)
-          ((and (= x x-center)
-                (= y y-center))
+          ((and (= point-x x-center)
+                (= point-y y-center))
            'origin)
           (else
-           (error (format #f "point-box-x (~S, ~S) and point-box-y (~S, ~S) must be contained within REGION: x in [~S, ~S] y in [~S, ~S]"
-                          x
-                          (exact->inexact x)
-                          y
-                          (exact->inexact y)
-                          (region-x-low region)
-                          (region-x-high region)
-                          (region-y-low region)
-                          (region-y-high region))
-                  )))))
+           (error (format #f "point-x ~S and point-y ~S must be contained within REGION: x in [~S, ~S] y in [~S, ~S]"
+                          point-x
+                          point-y
+                          x-low
+                          x-high
+                          y-low
+                          y-high))))))
 
 (define (region-north-east region)
   (make-region #:x-low (/ (+ (region-x-low region)
@@ -272,52 +303,158 @@ just to the left quadrant IV."
 The original tree will not be modified.
 
 Destructive operations on the new tree may affect the old tree."
-  (let ((old-root (quad-tree-root tree))
-        (bucket-size (quad-tree-bucket-size tree))
-        (bounds (quad-tree-bounds tree)))
-    (unless (region-includes-coordinate? bounds x y)
-      (error (format #f
-                     "The point (~a, ~a) is not inside the region ~a of this tree."
-                     x y bounds)))
-    (%make-quad-tree
-     (insert-helper old-root
-                    bucket-size
-                    bounds
-                    (make-point-box x y value))
-     bounds
-     bucket-size)))
+  (unless (coordinate-in-region? x y (quad-tree-bounds tree))
+    (error (format #f
+                   "The point (~a, ~a) is not inside the region ~a of this tree."
+                   x y (quad-tree-bounds tree))))
+  (%make-quad-tree
+   (insert-helper (quad-tree-root tree)
+                  (quad-tree-bucket-size tree)
+                  (quad-tree-bounds tree)
+                  (make-point-box x y value))
+   (quad-tree-bounds tree)
+   (quad-tree-bucket-size tree)))
+
+(define (insert-helper node bucket-size region point-box)
+  (match node
+    (($ <branch-node> north-east north-west south-west south-east)
+     (case (region-quadrant region
+                            (point-box-x point-box)
+                            (point-box-y point-box))
+       ((ne origin)
+        (make-branch-node (insert-helper north-east
+                                         bucket-size
+                                         (region-north-east region)
+                                         point-box)
+                          north-west
+                          south-west
+                          south-east))
+       ((nw)
+        (make-branch-node north-east
+                          (insert-helper north-west
+                                         bucket-size
+                                         (region-north-west region)
+                                         point-box)
+                          south-west
+                          south-east))
+       ((sw)
+        (make-branch-node north-east
+                          north-west
+                          (insert-helper south-west
+                                         bucket-size
+                                         (region-south-west region)
+                                         point-box)
+                          south-east))
+       ((se)
+        (make-branch-node north-east
+                          north-west
+                          south-west
+                          (insert-helper south-east
+                                         bucket-size
+                                         (region-south-east region)
+                                         point-box)))))
+    (($ <leaf-node> items)
+     (let-values (((items replaced items-length)
+                   ;; FIXME: Add an argument asking whether or not
+                   ;; replace existing items on same coordinate.
+                   (list-replace-or-length point-box
+                                           items
+                                           point-box-position-equal?
+                                           )))
+       (cond
+        (replaced
+         (make-leaf-node items))
+        ((< items-length bucket-size)
+         (make-leaf-node (cons point-box items)))
+        (else
+         (fold (lambda (point-box node)
+                 (insert-helper node
+                                bucket-size
+                                region
+                                point-box))
+               (make-branch-node (make-leaf-node (list))
+                                 (make-leaf-node (list))
+                                 (make-leaf-node (list))
+                                 (make-leaf-node (list)))
+               (cons point-box items))))))))
 
 (define (quad-tree-locate-position tree x y)
   "Find the value stored in @var{tree} at the coordinate given by @var{x} and @var{y}."
-  (locate-position-helper (quad-tree-root tree)
-                          (quad-tree-bucket-size tree)
-                          (quad-tree-bounds tree)
-                          x
-                          y
-                          ))
+  (let locate-position-helper ((node (quad-tree-root tree))
+                               (bucket-size (quad-tree-bucket-size tree))
+                               (region (quad-tree-bounds tree)))
+    (match node
+      (($ <branch-node> north-east north-west south-west south-east)
+       (case (region-quadrant region
+                              x
+                              y)
+         ((ne origin)
+          (locate-position-helper north-east
+                                  bucket-size
+                                  (region-north-east region)))
+         ((nw)
+          (locate-position-helper north-west
+                                  bucket-size
+                                  (region-north-west region)))
+         ((sw)
+          (locate-position-helper south-west
+                                  bucket-size
+                                  (region-south-west region)))
+         ((se)
+          (locate-position-helper south-east
+                                  bucket-size
+                                  (region-south-east region)))))
+      (($ <leaf-node> items)
+       (let loop ((items items))
+         (match items
+           ('() #f)
+           ((item . rest-of-items)
+            (if (and (= x (point-box-x item))
+                     (= y (point-box-y item)))
+                (point-box-value item)
+                (loop rest-of-items)))))))))
 
-(define (quad-tree-locate-area tree quadrant-in-area? coordinate-in-area?)
-  "Find all values in the given TREE and the given BOUNDS."
-  (locate-area-helper #:node (quad-tree-root tree)
-                      #:region (quad-tree-bounds tree)
-                      #:quadrant-in-area? quadrant-in-area?
-                      #:coordinate-in-area? coordinate-in-area?))
+(define (quad-tree-locate-area tree quadrant-intersects-area? coordinate-in-area?)
+  "Find all values in the given TREE and the given BOUNDS.
 
-(define (quad-tree-locate-circle tree x y radius)
-  (quad-tree-locate-area tree
-                         (make-quadrant-intersects-circle? x y radius)
-                         (lambda (x y)
-                           (point-in-circle? x y (* radius radius)))))
+@var{quadrant-intersects-area?} takes an object of type @var{<region>}
+and determines if there is an intersection between the area we query
+and the quadrant.  It is used for descent through the tree.
 
-(define (quad-tree-locate-region tree region)
-  (quad-tree-locate-area tree
-                         (lambda (quadrant)
-                           (region-intersects-region? region quadrant))
-                         (lambda (quadrant item)
-                           (region-includes-coordinate?
-                            region
-                            (point-box-x item)
-                            (point-box-y item)))))
+@var{coordinate-in-area?} takes coordinates @var{x} and @var{y}, and
+determines if this point is within the area we query.  It is used at
+the tree's leafs to find the individual @var{<point-box>}s within our
+query area."
+  (let locate-area-helper ((node (quad-tree-root tree))
+                           (region (quad-tree-bounds tree))
+                           (quadrant-intersects-area? quadrant-intersects-area?)
+                           (coordinate-in-area? coordinate-in-area?))
+    (match node
+      (($ <branch-node> north-east north-west south-west south-east)
+       (apply append
+              (map (lambda (get-quadrant branch)
+                     (let ((quadrant (get-quadrant region)))
+                       (cond
+                        ((quadrant-intersects-area? quadrant)
+                         (locate-area-helper branch
+                                             quadrant
+                                             quadrant-intersects-area?
+                                             coordinate-in-area?))
+                        (else '()))))
+                   (list region-north-east
+                         region-north-west
+                         region-south-west
+                         region-south-east)
+                   (list north-east
+                         north-west
+                         south-west
+                         south-east))))
+      (($ <leaf-node> items)
+       (map point-box-value
+        (filter (lambda (item)
+                  (coordinate-in-area? (point-box-x item)
+                                       (point-box-y item)))
+                items))))))
 
 (define (quad-tree-remove tree val)
   "Return TREE with VAL removed. The original tree will not be modified. Destructive operations on the new tree may affect the old tree."
@@ -394,67 +531,6 @@ the returned list in comparison to the input @var{item-list}.
            (values (cons old-item new-list)
                    replaced
                    new-count))))))))
-
-(define (insert-helper node bucket-size region point-box)
-  (match node
-    (($ <branch-node> north-east north-west south-west south-east)
-     (case (region-quadrant region (point-box-x point-box) (point-box-y point-box))
-       ((ne origin)
-        (make-branch-node (insert-helper north-east
-                                         bucket-size
-                                         (region-north-east region)
-                                         point-box)
-                          north-west
-                          south-west
-                          south-east))
-       ((nw)
-        (make-branch-node north-east
-                          (insert-helper north-west
-                                         bucket-size
-                                         (region-north-west region)
-                                         point-box)
-                          south-west
-                          south-east))
-       ((sw)
-        (make-branch-node north-east
-                          north-west
-                          (insert-helper south-west
-                                         bucket-size
-                                         (region-south-west region)
-                                         point-box)
-                          south-east))
-       ((se)
-        (make-branch-node north-east
-                          north-west
-                          south-west
-                          (insert-helper south-east
-                                         bucket-size
-                                         (region-south-east region)
-                                         point-box)))))
-    (($ <leaf-node> items)
-     (let-values (((items replaced items-length)
-                   ;; FIXME: Add an argument asking whether or not
-                   ;; replace existing items on same coordinate.
-                   (list-replace-or-length point-box
-                                           items
-                                           point-box-position-equal?
-                                           )))
-       (cond
-        (replaced
-         (make-leaf-node items))
-        ((< items-length bucket-size)
-         (make-leaf-node (cons point-box items)))
-        (else
-         (fold (lambda (point-box node)
-                 (insert-helper node
-                                bucket-size
-                                region
-                                point-box))
-               (make-branch-node (make-leaf-node (list))
-                                 (make-leaf-node (list))
-                                 (make-leaf-node (list))
-                                 (make-leaf-node (list)))
-               (cons point-box items))))))))
 
 (define (remove-helper node region bucket-size point-box val)
   (match node
@@ -537,56 +613,55 @@ the returned list in comparison to the input @var{item-list}.
               (point-box-value item)
               (loop rest-of-items))))))))
 
-(define (point-in-circle? x y radius-squared)
-  "Returns #t if the coordinate given by @var{x} and @var{y} is in a
-circle whose center is on the origin and its radius is defined as the
-square root of @var{radius-squared}, otherwise #f."
-  (<= (+ (* x x)
-         (* y y))
-      radius-squared))
+(define (coordinate-in-circle? x y circle)
+  "Returns #t if the coordinate given by @var{x} and @var{y} is in the
+circle defined by the @var{<circle>} @var{circle}, otherwise return
+#f."
+  (<= (+ (expt (- (circle-x circle) x) 2)
+         (expt (- (circle-y circle) y) 2))
+      (expt (circle-radius circle) 2)))
 
-(define (make-quadrant-intersects-circle? circle-x circle-y radius)
-  (when (< radius 0) (error "Radius must not be negative:" radius))
-  (let ((radius-squared (* radius radius)))
-    (define (clamp value minimum maximum)
-      (cond
-       ((< value minimum) minimum)
-       ((< maximum value) maximum)
-       (else value)))
-    (lambda (quadrant)
-      (let* ((closest-edge-to-circle-x (clamp circle-x
-                                              (region-x-low quadrant)
-                                              (region-x-high quadrant)))
-             (closest-edge-to-circle-y (clamp circle-y
-                                              (region-y-low quadrant)
-                                              (region-y-high quadrant))))
-        (point-in-circle? (- circle-x closest-edge-to-circle-x)
-                          (- circle-y closest-edge-to-circle-y)
-                          radius-squared)))))
+(define (region-intersects-circle? region circle)
+  (let* ((region-half-width (/ (- (region-x-high region)
+                                  (region-x-low region)) 2))
+         (region-half-height (/ (- (region-y-high region)
+                                   (region-y-low region)) 2))
+         (region-x-center (/ (+ (region-x-low region)
+                                (region-x-high region))
+                             2))
+         (region-y-center (/ (+ (region-y-low region)
+                                (region-y-high region))
+                             2))
+         (radius (circle-radius circle))
+         (distance-between-centers-x (abs (- (circle-x circle) region-x-center)))
+         (distance-between-centers-y (abs (- (circle-y circle) region-y-center)))
+         (distance-between-edges-x (- distance-between-centers-x
+                                      region-half-width
+                                      radius))
+         (distance-between-edges-y (- distance-between-centers-y
+                                      region-half-height
+                                      radius)))
+    (cond
+     ((positive? distance-between-edges-x) #f)
+     ((positive? distance-between-edges-y) #f)
+     (else
+      (or ((negate positive?) distance-between-edges-x)
+          ((negate positive?) distance-between-edges-y)
+          (<= (+ (expt (- distance-between-centers-x
+                          region-half-width)
+                       2)
+                 (expt (- distance-between-centers-y
+                          region-half-height)
+                       2))
+              (expt radius 2)))))))
 
-(define* (locate-area-helper #:key node region quadrant-in-area? coordinate-in-area?)
-  (match node
-    (($ <branch-node> north-east north-west south-west south-east)
-     (apply append
-            (map (lambda (get-quadrant branch)
-                   (let ((quadrant (get-quadrant region)))
-                     (cond
-                      ((quadrant-in-area? quadrant)
-                       (locate-area-helper #:node branch
-                                           #:region quadrant
-                                           #:quadrant-in-area? quadrant-in-area?
-                                           #:coordinate-in-area? coordinate-in-area?))
-                      (else '()))))
-                 (list region-north-east
-                       region-north-west
-                       region-south-east
-                       region-south-west)
-                 (list north-east
-                       north-west
-                       south-west
-                       south-east))))
-    (($ <leaf-node> items)
-     (filter (lambda (item) (coordinate-in-area? region item)) items))))
+(define (region-subset-of-circle? region circle)
+  (match-let ([($ <region> x-low x-high y-low y-high) region])
+    (and
+     (coordinate-in-circle? x-low y-low circle)
+     (coordinate-in-circle? x-high y-low circle)
+     (coordinate-in-circle? x-low y-high circle)
+     (coordinate-in-circle? x-high y-high circle))))
 
 (define (quad-tree-boundaries quad-tree)
   (let loop ((current-boundary (quad-tree-bounds quad-tree))
