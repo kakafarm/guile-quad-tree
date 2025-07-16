@@ -41,6 +41,7 @@
   #:use-module (ice-9 match)
   #:use-module (statprof)
   #:export (
+            <region>
             make-region
             region-x-low
             region-x-high
@@ -107,6 +108,14 @@
   (y point-box-y)
   (value point-box-value))
 
+(set-procedure-property!
+ make-point-box
+ 'documentation
+ "Make a @var{<point-box>}.
+
+A boxed value, like SRFI-111 <box>, with an associated location on a
+2D plane defined by its @var{x} and @var{y} fields.")
+
 (define-record-type <region>
   (%make-region x-low x-high y-low y-high)
   region?
@@ -123,6 +132,16 @@
 (define (region-y-center region)
   (/ (+ (region-y-low region)
         (region-y-high region))
+     2))
+
+(define (region-half-width region)
+  (/ (- (region-x-high region)
+        (region-x-low region))
+     2))
+
+(define (region-half-height region)
+  (/ (- (region-y-high region)
+        (region-y-low region))
      2))
 
 (define-record-type <circle>
@@ -297,7 +316,7 @@ just to the left quadrant IV."
                    region
                    bucket-size))
 
-(define (quad-tree-insert tree x y value)
+(define* (quad-tree-insert tree x y value #:key replace-when-same-position?)
   "Return @var{tree} with @{value} added.
 
 The original tree will not be modified.
@@ -308,75 +327,92 @@ Destructive operations on the new tree may affect the old tree."
                    "The point (~a, ~a) is not inside the region ~a of this tree."
                    x y (quad-tree-bounds tree))))
   (%make-quad-tree
-   (insert-helper (quad-tree-root tree)
-                  (quad-tree-bucket-size tree)
-                  (quad-tree-bounds tree)
-                  (make-point-box x y value))
+   (quad-tree-insert-helper (quad-tree-root tree)
+                            (quad-tree-bucket-size tree)
+                            (quad-tree-bounds tree)
+                            (make-point-box x y value)
+                            #:replace-when-same-position? replace-when-same-position?)
    (quad-tree-bounds tree)
    (quad-tree-bucket-size tree)))
 
-(define (insert-helper node bucket-size region point-box)
+(define* (quad-tree-insert-helper node bucket-size region point-box #:key replace-when-same-position?)
   (match node
     (($ <branch-node> north-east north-west south-west south-east)
      (case (region-quadrant region
                             (point-box-x point-box)
                             (point-box-y point-box))
        ((ne origin)
-        (make-branch-node (insert-helper north-east
-                                         bucket-size
-                                         (region-north-east region)
-                                         point-box)
+        (make-branch-node (quad-tree-insert-helper north-east
+                                                   bucket-size
+                                                   (region-north-east region)
+                                                   point-box)
                           north-west
                           south-west
                           south-east))
        ((nw)
         (make-branch-node north-east
-                          (insert-helper north-west
-                                         bucket-size
-                                         (region-north-west region)
-                                         point-box)
+                          (quad-tree-insert-helper north-west
+                                                   bucket-size
+                                                   (region-north-west region)
+                                                   point-box)
                           south-west
                           south-east))
        ((sw)
         (make-branch-node north-east
                           north-west
-                          (insert-helper south-west
-                                         bucket-size
-                                         (region-south-west region)
-                                         point-box)
+                          (quad-tree-insert-helper south-west
+                                                   bucket-size
+                                                   (region-south-west region)
+                                                   point-box)
                           south-east))
        ((se)
         (make-branch-node north-east
                           north-west
                           south-west
-                          (insert-helper south-east
-                                         bucket-size
-                                         (region-south-east region)
-                                         point-box)))))
+                          (quad-tree-insert-helper south-east
+                                                   bucket-size
+                                                   (region-south-east region)
+                                                   point-box)))))
     (($ <leaf-node> items)
-     (let-values (((items replaced items-length)
-                   ;; FIXME: Add an argument asking whether or not
-                   ;; replace existing items on same coordinate.
-                   (list-replace-or-length point-box
-                                           items
-                                           point-box-position-equal?
-                                           )))
-       (cond
-        (replaced
-         (make-leaf-node items))
-        ((< items-length bucket-size)
-         (make-leaf-node (cons point-box items)))
-        (else
-         (fold (lambda (point-box node)
-                 (insert-helper node
-                                bucket-size
-                                region
-                                point-box))
-               (make-branch-node (make-leaf-node (list))
-                                 (make-leaf-node (list))
-                                 (make-leaf-node (list))
-                                 (make-leaf-node (list)))
-               (cons point-box items))))))))
+     (cond
+      (replace-when-same-position?
+       (let-values (((items replaced items-length)
+                     (list-replace-or-length point-box
+                                             items
+                                             point-box-position-equal?
+                                             )))
+         (cond
+          (replaced
+           (make-leaf-node items))
+          ((< items-length bucket-size)
+           (make-leaf-node (cons point-box items)))
+          (else
+           (fold (lambda (point-box node)
+                   (quad-tree-insert-helper node
+                                            bucket-size
+                                            region
+                                            point-box))
+                 (make-branch-node (make-leaf-node (list))
+                                   (make-leaf-node (list))
+                                   (make-leaf-node (list))
+                                   (make-leaf-node (list)))
+                 (cons point-box items))))))
+      (else
+       (let ((new-items (cons point-box items)))
+         (cond
+          ((< (length items) bucket-size)
+           (make-leaf-node new-items))
+          (else
+           (fold (lambda (point-box node)
+                   (quad-tree-insert-helper node
+                                            bucket-size
+                                            region
+                                            point-box))
+                 (make-branch-node (make-leaf-node (list))
+                                   (make-leaf-node (list))
+                                   (make-leaf-node (list))
+                                   (make-leaf-node (list)))
+                 new-items)))))))))
 
 (define (quad-tree-locate-position tree x y)
   "Find the value stored in @var{tree} at the coordinate given by @var{x} and @var{y}."
@@ -622,25 +658,16 @@ circle defined by the @var{<circle>} @var{circle}, otherwise return
       (expt (circle-radius circle) 2)))
 
 (define (region-intersects-circle? region circle)
-  (let* ((region-half-width (/ (- (region-x-high region)
-                                  (region-x-low region)) 2))
-         (region-half-height (/ (- (region-y-high region)
-                                   (region-y-low region)) 2))
-         (region-x-center (/ (+ (region-x-low region)
-                                (region-x-high region))
-                             2))
-         (region-y-center (/ (+ (region-y-low region)
-                                (region-y-high region))
-                             2))
-         (radius (circle-radius circle))
-         (distance-between-centers-x (abs (- (circle-x circle) region-x-center)))
-         (distance-between-centers-y (abs (- (circle-y circle) region-y-center)))
-         (distance-between-edges-x (- distance-between-centers-x
-                                      region-half-width
-                                      radius))
-         (distance-between-edges-y (- distance-between-centers-y
-                                      region-half-height
-                                      radius)))
+  (match-let* ((($ <region> x-low x-high y-low y-high) region)
+               (($ <circle> our-circle-x our-circle-y radius) circle)
+               (distance-between-centers-x (abs (- our-circle-x (region-x-center region))))
+               (distance-between-centers-y (abs (- our-circle-y (region-y-center region))))
+               (distance-between-edges-x (- distance-between-centers-x
+                                            (region-half-width region)
+                                            radius))
+               (distance-between-edges-y (- distance-between-centers-y
+                                            (region-half-height region)
+                                            radius)))
     (cond
      ((positive? distance-between-edges-x) #f)
      ((positive? distance-between-edges-y) #f)
