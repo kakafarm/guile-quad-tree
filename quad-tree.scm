@@ -124,6 +124,15 @@ A boxed value, like SRFI-111 <box>, with an associated location on a
   (y-low region-y-low)
   (y-high region-y-high))
 
+(define* (make-region #:key x-low x-high y-low y-high)
+  "Build a new record of type @var{<region>}, an axis aligned rectangle.
+
+Records of this type are used to define the bounds of quad-tree nodes,
+and also used when querying for points within an arbitrary region."
+  (unless (and x-low x-high y-low y-high)
+    (error "All arguments must be provided." x-low x-high y-low y-high))
+  (%make-region x-low x-high y-low y-high))
+
 (define (region-x-center region)
   (/ (+ (region-x-low region)
         (region-x-high region))
@@ -150,11 +159,6 @@ A boxed value, like SRFI-111 <box>, with an associated location on a
   (x circle-x)
   (y circle-y)
   (radius circle-radius))
-
-(define* (make-region #:key x-low x-high y-low y-high)
-  (unless (and x-low x-high y-low y-high)
-    (error "All arguments must be provided." x-low x-high y-low y-high))
-  (%make-region x-low x-high y-low y-high))
 
 (define (point-box-position-equal? point-box-a point-box-b)
   (match-let ((($ <point-box> a-x a-y _)
