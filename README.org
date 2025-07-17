@@ -28,3 +28,20 @@ If binary trees split lines, then quad trees split planes. A quad tree is like a
 (quad-tree-locate-area tree bound)
 
 #+END_SRC
+
+* Examples.
+
+** =./examples/points-in-out-areas.scm=.
+
+A bunch of points moving in straight lines.  They change their color depending on where they are.
+
+** =./examples/boids.scm=
+
+Boids move about in herds.
+
+*** Controls.
+
+- =up= key will double the number of boids.
+- =down= key will divide the number of boids.
+- =b= key will toggle the use of the quad-tree in boid logic.
+- =d= key will show debug text in the standard output.
