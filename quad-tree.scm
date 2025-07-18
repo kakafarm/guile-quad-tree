@@ -36,10 +36,9 @@
 
 (define-module (quad-tree)
   #:use-module (srfi srfi-1)
-  #:use-module (srfi srfi-9)
+  #:use-module (srfi srfi-9 gnu)
   #:use-module (srfi srfi-11)
   #:use-module (ice-9 match)
-  #:use-module (statprof)
   #:export (
             <region>
             make-region
@@ -99,9 +98,15 @@
  (else
   ))
 
+(define (average a b)
+  (/ (+ a b) 2))
+
+(define (square x)
+  (* x x))
+
 ;; Point boxes contain values and can be used in the quad tree.
 ;; TODO use vector from sly instead of custom vector
-(define-record-type <point-box>
+(define-immutable-record-type <point-box>
   (make-point-box x y value)
   point-box?
   (x point-box-x)
@@ -116,13 +121,13 @@
 A boxed value, like SRFI-111 <box>, with an associated location on a
 2D plane defined by its @var{x} and @var{y} fields.")
 
-(define-record-type <region>
+(define-immutable-record-type <region>
   (%make-region x-low x-high y-low y-high)
   region?
-  (x-low region-x-low)
-  (x-high region-x-high)
-  (y-low region-y-low)
-  (y-high region-y-high))
+  (x-low region-x-low set-region-x-low)
+  (x-high region-x-high set-region-x-high)
+  (y-low region-y-low set-region-y-low)
+  (y-high region-y-high set-region-y-high))
 
 (define* (make-region #:key x-low x-high y-low y-high)
   "Build a new record of type @var{<region>}, an axis aligned rectangle.
@@ -134,14 +139,12 @@ and also used when querying for points within an arbitrary region."
   (%make-region x-low x-high y-low y-high))
 
 (define (region-x-center region)
-  (/ (+ (region-x-low region)
-        (region-x-high region))
-     2))
+  (average (region-x-low region)
+           (region-x-high region)))
 
 (define (region-y-center region)
-  (/ (+ (region-y-low region)
-        (region-y-high region))
-     2))
+  (average (region-y-low region)
+           (region-y-high region)))
 
 (define (region-half-width region)
   (/ (- (region-x-high region)
@@ -153,7 +156,7 @@ and also used when querying for points within an arbitrary region."
         (region-y-low region))
      2))
 
-(define-record-type <circle>
+(define-immutable-record-type <circle>
   (make-circle x y radius)
   circle?
   (x circle-x)
@@ -247,75 +250,55 @@ just to the left quadrant IV."
                           y-high))))))
 
 (define (region-north-east region)
-  (make-region #:x-low (/ (+ (region-x-low region)
-                             (region-x-high region))
-                          2)
-               #:x-high (region-x-high region)
-               #:y-low (/ (+ (region-y-low region)
-                             (region-y-high region))
-                          2)
-               #:y-high (region-y-high region)))
+  (set-fields region
+              ((region-x-low) (region-x-center region))
+              ((region-y-low) (region-y-center region))))
 
 (define (region-north-west region)
-  (make-region #:x-low (region-x-low region)
-               #:x-high (/ (+ (region-x-low region)
-                              (region-x-high region))
-                           2)
-               #:y-low (/ (+ (region-y-low region)
-                             (region-y-high region))
-                          2)
-               #:y-high (region-y-high region)))
-
-(define (region-south-east region)
-  (make-region #:x-low (/ (+ (region-x-low region)
-                             (region-x-high region))
-                          2)
-               #:x-high (region-x-high region)
-               #:y-low (region-y-low region)
-               #:y-high (/ (+ (region-y-low region)
-                              (region-y-high region))
-                           2)))
+  (set-fields region
+              ((region-x-high) (region-x-center region))
+              ((region-y-low) (region-y-center region))))
 
 (define (region-south-west region)
-  (make-region #:x-low (region-x-low region)
-               #:x-high (/ (+ (region-x-low region)
-                              (region-x-high region))
-                           2)
-               #:y-low (region-y-low region)
-               #:y-high (/ (+ (region-y-low region)
-                              (region-y-high region))
-                           2)))
+  (set-fields region
+              ((region-x-high) (region-x-center region))
+              ((region-y-high) (region-y-center region))))
+
+(define (region-south-east region)
+  (set-fields region
+              ((region-x-low) (region-x-center region))
+              ((region-y-high) (region-y-center region))))
 
 
 ;; The quad tree object is a wrapper over the recursively defined
 ;; node chain. The quad tree object contains several pieces of
 ;; meta data about the tree. The amount of items that can be stored on
 ;; a leaf node. The bounds of the quad-tree.
-(define-record-type <quad-tree>
+(define-immutable-record-type <quad-tree>
   (%make-quad-tree root bounds bucket-size)
   quad-tree?
-  (root quad-tree-root)
+  (root quad-tree-root set-quad-tree-root)
   (bounds quad-tree-bounds)
   (bucket-size quad-tree-bucket-size))
 
 ;; A node that represents a four way split in the tree.
 ;; Contains four sub nodes and no values.
-(define-record-type <branch-node>
+(define-immutable-record-type <branch-node>
   (make-branch-node north-east north-west south-west south-east)
   branch-node?
-  (north-east branch-node-north-east)
-  (north-west branch-node-north-west)
-  (south-west branch-node-south-west)
-  (south-east branch-node-south-east))
+  (north-east branch-node-north-east set-branch-node-north-east)
+  (north-west branch-node-north-west set-branch-node-north-west)
+  (south-west branch-node-south-west set-branch-node-south-west)
+  (south-east branch-node-south-east set-branch-node-south-east))
 
 ;; A leaf node. Contains zero or more values. The
 ;; zero value leaf node is the null node.
-(define-record-type <leaf-node>
+(define-immutable-record-type <leaf-node>
   (make-leaf-node items)
   leaf-node?
-  (items leaf-node-items))
+  (items leaf-node-items set-leaf-node-items))
 
-(define* (make-quad-tree region #:optional (bucket-size 1))
+(define* (make-quad-tree region #:key (bucket-size 1))
   (%make-quad-tree (make-leaf-node '())
                    region
                    bucket-size))
@@ -330,14 +313,12 @@ Destructive operations on the new tree may affect the old tree."
     (error (format #f
                    "The point (~a, ~a) is not inside the region ~a of this tree."
                    x y (quad-tree-bounds tree))))
-  (%make-quad-tree
+  (set-quad-tree-root tree
    (quad-tree-insert-helper (quad-tree-root tree)
                             (quad-tree-bucket-size tree)
                             (quad-tree-bounds tree)
                             (make-point-box x y value)
-                            #:replace-when-same-position? replace-when-same-position?)
-   (quad-tree-bounds tree)
-   (quad-tree-bucket-size tree)))
+                            #:replace-when-same-position? replace-when-same-position?)))
 
 (define* (quad-tree-insert-helper node bucket-size region point-box #:key replace-when-same-position?)
   (match node
@@ -346,37 +327,28 @@ Destructive operations on the new tree may affect the old tree."
                             (point-box-x point-box)
                             (point-box-y point-box))
        ((ne origin)
-        (make-branch-node (quad-tree-insert-helper north-east
-                                                   bucket-size
-                                                   (region-north-east region)
-                                                   point-box)
-                          north-west
-                          south-west
-                          south-east))
+        (set-branch-node-north-east node (quad-tree-insert-helper north-east
+                                                                  bucket-size
+                                                                  (region-north-east region)
+                                                                  point-box)))
        ((nw)
-        (make-branch-node north-east
-                          (quad-tree-insert-helper north-west
-                                                   bucket-size
-                                                   (region-north-west region)
-                                                   point-box)
-                          south-west
-                          south-east))
+        (set-branch-node-north-west node
+                                    (quad-tree-insert-helper north-west
+                                                             bucket-size
+                                                             (region-north-west region)
+                                                             point-box)))
        ((sw)
-        (make-branch-node north-east
-                          north-west
-                          (quad-tree-insert-helper south-west
-                                                   bucket-size
-                                                   (region-south-west region)
-                                                   point-box)
-                          south-east))
+        (set-branch-node-south-west node
+                                    (quad-tree-insert-helper south-west
+                                                             bucket-size
+                                                             (region-south-west region)
+                                                             point-box)))
        ((se)
-        (make-branch-node north-east
-                          north-west
-                          south-west
-                          (quad-tree-insert-helper south-east
-                                                   bucket-size
-                                                   (region-south-east region)
-                                                   point-box)))))
+        (set-branch-node-south-east node
+                                    (quad-tree-insert-helper south-east
+                                                             bucket-size
+                                                             (region-south-east region)
+                                                             point-box)))))
     (($ <leaf-node> items)
      (cond
       (replace-when-same-position?
@@ -387,9 +359,9 @@ Destructive operations on the new tree may affect the old tree."
                                              )))
          (cond
           (replaced
-           (make-leaf-node items))
+           (set-leaf-node-items node items))
           ((< items-length bucket-size)
-           (make-leaf-node (cons point-box items)))
+           (set-leaf-node-items node (cons point-box items)))
           (else
            (fold (lambda (point-box node)
                    (quad-tree-insert-helper node
@@ -405,7 +377,7 @@ Destructive operations on the new tree may affect the old tree."
        (let ((new-items (cons point-box items)))
          (cond
           ((< (length items) bucket-size)
-           (make-leaf-node new-items))
+           (set-leaf-node-items node new-items))
           (else
            (fold (lambda (point-box node)
                    (quad-tree-insert-helper node
@@ -471,30 +443,30 @@ query area."
                            (coordinate-in-area? coordinate-in-area?))
     (match node
       (($ <branch-node> north-east north-west south-west south-east)
-       (apply append
-              (map (lambda (get-quadrant branch)
-                     (let ((quadrant (get-quadrant region)))
-                       (cond
-                        ((quadrant-intersects-area? quadrant)
-                         (locate-area-helper branch
-                                             quadrant
-                                             quadrant-intersects-area?
-                                             coordinate-in-area?))
-                        (else '()))))
-                   (list region-north-east
-                         region-north-west
-                         region-south-west
-                         region-south-east)
-                   (list north-east
-                         north-west
-                         south-west
-                         south-east))))
+       (concatenate
+        (map (lambda (get-quadrant branch)
+               (let ((quadrant (get-quadrant region)))
+                 (cond
+                  ((quadrant-intersects-area? quadrant)
+                   (locate-area-helper branch
+                                       quadrant
+                                       quadrant-intersects-area?
+                                       coordinate-in-area?))
+                  (else '()))))
+             (list region-north-east
+                   region-north-west
+                   region-south-west
+                   region-south-east)
+             (list north-east
+                   north-west
+                   south-west
+                   south-east))))
       (($ <leaf-node> items)
        (map point-box-value
-        (filter (lambda (item)
-                  (coordinate-in-area? (point-box-x item)
-                                       (point-box-y item)))
-                items))))))
+            (filter (lambda (item)
+                      (coordinate-in-area? (point-box-x item)
+                                           (point-box-y item)))
+                    items))))))
 
 (define (quad-tree-remove tree val)
   "Return TREE with VAL removed. The original tree will not be modified. Destructive operations on the new tree may affect the old tree."
@@ -657,9 +629,9 @@ the returned list in comparison to the input @var{item-list}.
   "Returns #t if the coordinate given by @var{x} and @var{y} is in the
 circle defined by the @var{<circle>} @var{circle}, otherwise return
 #f."
-  (<= (+ (expt (- (circle-x circle) x) 2)
-         (expt (- (circle-y circle) y) 2))
-      (expt (circle-radius circle) 2)))
+  (<= (+ (square (- (circle-x circle) x))
+         (square (- (circle-y circle) y)))
+      (square (circle-radius circle))))
 
 (define (region-intersects-circle? region circle)
   (match-let* ((($ <region> x-low x-high y-low y-high) region)
@@ -678,13 +650,11 @@ circle defined by the @var{<circle>} @var{circle}, otherwise return
      (else
       (or ((negate positive?) distance-between-edges-x)
           ((negate positive?) distance-between-edges-y)
-          (<= (+ (expt (- distance-between-centers-x
-                          region-half-width)
-                       2)
-                 (expt (- distance-between-centers-y
-                          region-half-height)
-                       2))
-              (expt radius 2)))))))
+          (<= (+ (square (- distance-between-centers-x
+                            (region-half-width region)))
+                 (square (- distance-between-centers-y
+                            (region-half-height region))))
+              (square radius)))))))
 
 (define (region-subset-of-circle? region circle)
   (match-let ([($ <region> x-low x-high y-low y-high) region])
