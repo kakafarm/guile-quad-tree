@@ -6,6 +6,8 @@
 
  (ice-9 match)
 
+ (statprof)
+
  (chickadee)
  (chickadee graphics color)
  (chickadee graphics path)
@@ -18,10 +20,12 @@
 ;;; Records.
 
 (define-record-type <point>
-  (make-point position velocity)
+  (make-point position-x position-y velocity-x velocity-y)
   point?
-  (position point-position set-point-position!)
-  (velocity point-velocity set-point-velocity!))
+  (position-x point-position-x set-point-position-x!)
+  (position-y point-position-y set-point-position-y!)
+  (velocity-x point-velocity-x set-point-velocity-x!)
+  (velocity-y point-velocity-y set-point-velocity-y!))
 
 ;;; Globals.
 
@@ -38,8 +42,8 @@
 (define *arena-height* 1)
 
 ;; XXX: A lot bigger than the arena because points may go beyond arena bounds.
-(define *quad-tree-region* (make-region #:x-low -10 #:x-high 10
-                                        #:y-low -10 #:y-high 10))
+(define *quad-tree-region* (make-region #:x-low -10.0 #:x-high 10.0
+                                        #:y-low -10.0 #:y-high 10.0))
 
 (define *number-of-points* 10)
 
@@ -74,12 +78,14 @@
       (apply format #t x stuff)
       #f))
 
+(define (square x)
+  (* x x))
+
 (define (turn-at-square-edges boid)
-  (let* ([x (real-part (point-position boid))]
-         [y (imag-part (point-position boid))]
-         [velocity (point-velocity boid)]
-         [velocity-x (real-part velocity)]
-         [velocity-y (imag-part velocity)]
+  (let* ([x (point-position-x boid)]
+         [y (point-position-y boid)]
+         [velocity-x (point-velocity-x boid)]
+         [velocity-y (point-velocity-y boid)]
          [velocity-x-addition
           (cond
            [(< x 0)
@@ -96,59 +102,93 @@
             (- (boids-parameters-turn-factor *boids-parameters*))]
            [else
             0.0])])
-    (set-point-velocity! boid (+ velocity
-                                 (* velocity-x-addition 1+0i)
-                                 (* velocity-y-addition 0+1i)))))
+    (set-point-velocity-x! boid (+ velocity-x velocity-x-addition))
+    (set-point-velocity-y! boid (+ velocity-y velocity-y-addition))))
 
-(define (in-range? boid-a boid-b range)
-  (define (square x)
-    (* x x))
-  (let* ([position-a (point-position boid-a)]
-         [position-b (point-position boid-b)]
-         [a-sub-b (- position-a position-b)])
-    (< (+ (square (real-part a-sub-b))
-          (square (imag-part a-sub-b)))
-       (square range))))
+(define (in-range? boid-a boid-b range-squared)
+  (unless (and (real? range-squared) (inexact? range-squared))
+    (error "All arguments must be floats:" range-squared))
+  (let* ([position-a-x (point-position-x boid-a)]
+         [position-a-y (point-position-y boid-a)]
+         [position-b-x (point-position-x boid-b)]
+         [position-b-y (point-position-y boid-b)]
+         [a-sub-b-x (- position-a-x position-b-x)]
+         [a-sub-b-y (- position-a-y position-b-y)])
+    (< (+ (square a-sub-b-x)
+          (square a-sub-b-y))
+       range-squared)))
 
 (define (update-boid boid-me other-boids)
-  (debug-format "update-boid: before: velocity: ~s~%" (point-velocity boid-me))
-  (let ([boid-me-center (point-position boid-me)]
-        [boid-me-velocity (point-velocity boid-me)])
+  (debug-format "update-boid: before: velocity: ~s ~s~%"
+                (point-velocity-x boid-me)
+                (point-velocity-y boid-me)
+                )
+  (let ([boid-me-center-x (point-position-x boid-me)]
+        [boid-me-center-y (point-position-y boid-me)]
+        [boid-me-velocity-x (point-velocity-x boid-me)]
+        [boid-me-velocity-y (point-velocity-y boid-me)]
+        [protected-range-squared (square (boids-parameters-protected-range *boids-parameters*))]
+        [visual-range-squared (square (boids-parameters-visual-range *boids-parameters*))])
     (let loop ([other-boids other-boids]
-               [sum-of-differences-in-position-with-other-boids 0.0+0.0i]
-               [sum-of-boid-velocities-in-visual-range 0.0+0.0i]
-               [sum-of-boid-positions-in-visual-range 0.0+0.0i]
+               [sum-of-differences-in-position-with-other-boids-x 0.0]
+               [sum-of-differences-in-position-with-other-boids-y 0.0]
+               [sum-of-boid-velocities-in-visual-range-x 0.0]
+               [sum-of-boid-velocities-in-visual-range-y 0.0]
+               [sum-of-boid-positions-in-visual-range-x 0.0]
+               [sum-of-boid-positions-in-visual-range-y 0.0]
                [number-of-boids-in-visual-range 0])
       (match other-boids
         ['()
          (let ( ;; Separation.
-               [new-boid-me-velocity (+ boid-me-velocity
-                                        ;; Separation.
-                                        (* sum-of-differences-in-position-with-other-boids
-                                           (boids-parameters-avoid-factor *boids-parameters*)))])
+               [new-boid-me-velocity-x (+ boid-me-velocity-x
+                                          ;; Separation.
+                                          (* sum-of-differences-in-position-with-other-boids-x
+                                             (boids-parameters-avoid-factor *boids-parameters*)))]
+               [new-boid-me-velocity-y (+ boid-me-velocity-y
+                                          ;; Separation.
+                                          (* sum-of-differences-in-position-with-other-boids-y
+                                             (boids-parameters-avoid-factor *boids-parameters*)))])
            (cond
             [(zero? number-of-boids-in-visual-range)
-             (set-point-velocity! boid-me new-boid-me-velocity)]
+             (set-point-velocity-x! boid-me new-boid-me-velocity-x)
+             (set-point-velocity-y! boid-me new-boid-me-velocity-y)]
             [else
              (let* ( ;; Alignment.
-                    [average-of-boids-velocities-in-visual-range
-                     (/ sum-of-boid-velocities-in-visual-range
+                    [average-of-boids-velocities-in-visual-range-x
+                     (/ sum-of-boid-velocities-in-visual-range-x
+                        number-of-boids-in-visual-range)]
+                    [average-of-boids-velocities-in-visual-range-y
+                     (/ sum-of-boid-velocities-in-visual-range-y
                         number-of-boids-in-visual-range)]
                     ;; Cohesion.
-                    [average-of-other-boid-positions-in-visual-range
-                     (/ sum-of-boid-positions-in-visual-range
+                    [average-of-other-boid-positions-in-visual-range-x
+                     (/ sum-of-boid-positions-in-visual-range-x
                         number-of-boids-in-visual-range)]
-                    [new-boid-me-velocity (+ new-boid-me-velocity
+                    [average-of-other-boid-positions-in-visual-range-y
+                     (/ sum-of-boid-positions-in-visual-range-y
+                        number-of-boids-in-visual-range)]
+                    [new-boid-me-velocity-x (+ new-boid-me-velocity-x
                                              ;; Alignment.
-                                             (* (- average-of-boids-velocities-in-visual-range
-                                                   new-boid-me-velocity)
+                                             (* (- average-of-boids-velocities-in-visual-range-x
+                                                   new-boid-me-velocity-x)
                                                 (boids-parameters-matching-factor *boids-parameters*))
                                              ;; Cohesion.
-                                             (* (- average-of-other-boid-positions-in-visual-range
-                                                   boid-me-center)
+                                             (* (- average-of-other-boid-positions-in-visual-range-x
+                                                   boid-me-center-x)
+                                                (boids-parameters-centering-factor *boids-parameters*))
+                                             )]
+                    [new-boid-me-velocity-y (+ new-boid-me-velocity-y
+                                             ;; Alignment.
+                                             (* (- average-of-boids-velocities-in-visual-range-y
+                                                   new-boid-me-velocity-y)
+                                                (boids-parameters-matching-factor *boids-parameters*))
+                                             ;; Cohesion.
+                                             (* (- average-of-other-boid-positions-in-visual-range-y
+                                                   boid-me-center-y)
                                                 (boids-parameters-centering-factor *boids-parameters*))
                                              )])
-               (set-point-velocity! boid-me new-boid-me-velocity))]))]
+               (set-point-velocity-x! boid-me new-boid-me-velocity-x)
+               (set-point-velocity-y! boid-me new-boid-me-velocity-y))]))]
         [(other-boid . rest-of-other-boids)
          (cond
           ;; Nothing to do if other-boid is me.
@@ -156,35 +196,53 @@
            (debug-format "update-boid: eq boid-me other-boid.~%")
            (loop
             rest-of-other-boids
-            sum-of-differences-in-position-with-other-boids
-            sum-of-boid-velocities-in-visual-range
-            sum-of-boid-positions-in-visual-range
+            sum-of-differences-in-position-with-other-boids-x
+            sum-of-differences-in-position-with-other-boids-y            
+            sum-of-boid-velocities-in-visual-range-x
+            sum-of-boid-velocities-in-visual-range-y
+            sum-of-boid-positions-in-visual-range-x
+            sum-of-boid-positions-in-visual-range-y
             number-of-boids-in-visual-range)]
           ;; If other-boid is in protected range, update all things.
-          [(in-range? boid-me other-boid (boids-parameters-protected-range *boids-parameters*))
+          [(in-range? boid-me other-boid protected-range-squared)
            (debug-format "update-boid: protected range~%")
            (loop
             rest-of-other-boids
-            (+ sum-of-differences-in-position-with-other-boids
-               (- boid-me-center
-                  (point-position other-boid)))
-            (+ sum-of-boid-velocities-in-visual-range
-               (point-velocity other-boid))
-            (+ sum-of-boid-positions-in-visual-range
-               (point-position other-boid))
+            (+ sum-of-differences-in-position-with-other-boids-x
+               (- boid-me-center-x
+                  (point-position-x other-boid)))
+            (+ sum-of-differences-in-position-with-other-boids-y
+               (- boid-me-center-y
+                  (point-position-y other-boid)))
+            (+ sum-of-boid-velocities-in-visual-range-x
+               (point-velocity-x other-boid))
+            (+ sum-of-boid-velocities-in-visual-range-y
+               (point-velocity-y other-boid))
+            (+ sum-of-boid-positions-in-visual-range-x
+               (point-position-x other-boid))
+            (+ sum-of-boid-positions-in-visual-range-y
+               (point-position-y other-boid))
             (1+ number-of-boids-in-visual-range)
             )]
           ;; If other-boid is not within the protected range but is in
           ;; the visual range, only update the alignment and cohesion stuff.
-          [(in-range? boid-me other-boid (boids-parameters-visual-range *boids-parameters*))
+          [(in-range? boid-me other-boid visual-range-squared)
            (debug-format "update-boid: only visual range~%")
            (loop
             rest-of-other-boids
-            sum-of-differences-in-position-with-other-boids
-            (+ sum-of-boid-velocities-in-visual-range
-               (point-velocity other-boid))
-            (+ sum-of-boid-positions-in-visual-range
-               (point-position other-boid))
+            sum-of-differences-in-position-with-other-boids-x
+            sum-of-differences-in-position-with-other-boids-y
+
+            (+ sum-of-boid-velocities-in-visual-range-x
+               (point-velocity-x other-boid))
+            (+ sum-of-boid-velocities-in-visual-range-y
+               (point-velocity-y other-boid))
+
+            (+ sum-of-boid-positions-in-visual-range-x
+               (point-position-x other-boid))
+            (+ sum-of-boid-positions-in-visual-range-y
+               (point-position-y other-boid))
+            
             (1+ number-of-boids-in-visual-range)
             )]
           ;; or when other-boid is outside all ranges.
@@ -192,45 +250,55 @@
            (debug-format "update-boid: not in range~%")
            (loop
             rest-of-other-boids
-            sum-of-differences-in-position-with-other-boids
-            sum-of-boid-velocities-in-visual-range
-            sum-of-boid-positions-in-visual-range
+            sum-of-differences-in-position-with-other-boids-x
+            sum-of-differences-in-position-with-other-boids-y
+            sum-of-boid-velocities-in-visual-range-x
+            sum-of-boid-velocities-in-visual-range-y
+            sum-of-boid-positions-in-visual-range-x
+            sum-of-boid-positions-in-visual-range-y
             number-of-boids-in-visual-range)
            ]
           )])))
-  (debug-format "update-boid: after: velocity: ~s~%" (point-velocity boid-me)))
+  (debug-format "update-boid: after: velocity: ~s ~s~%"
+                (point-velocity-x boid-me)
+                (point-velocity-y boid-me)))
 
 (define (enforce-boid-speed-limits boid)
   (define (clip low value high)
     (max low (min value high)))
-  (define (normalize-complex-number complex-number)
-    (let ((our-magnitude (magnitude complex-number)))
-      (cond
-       ((zero? our-magnitude)
-        0)
-       (else
-        (/ complex-number
-           our-magnitude)))))
-  (let* ((old-velocity (point-velocity boid))
+  (define (normalize-number x our-magnitude)
+    (cond
+     ((zero? our-magnitude)
+      0)
+     (else
+      (/ x our-magnitude))))
+  (let* ((old-velocity-x (point-velocity-x boid))
+         (old-velocity-y (point-velocity-y boid))
+         (our-magnitude (sqrt (+ (square old-velocity-x)
+                                 (square old-velocity-y))))
          (clipped-speed (clip (boids-parameters-minimal-speed *boids-parameters*)
-                              (magnitude old-velocity)
+                              our-magnitude
                               (boids-parameters-maximal-speed *boids-parameters*)))
-         (new-velocity  (* clipped-speed
-                           (normalize-complex-number old-velocity)))
-         )
-    (debug-format "enforce-boid-speed-limits: old-velocity: ~A~%" old-velocity)
+         (new-velocity-x (* clipped-speed
+                            (normalize-number old-velocity-x our-magnitude)))
+         (new-velocity-y (* clipped-speed
+                            (normalize-number old-velocity-y our-magnitude))))
+    (debug-format "enforce-boid-speed-limits: old-velocity: ~A ~A~%" old-velocity-x old-velocity-y)
     (debug-format "enforce-boid-speed-limits: clipped-speed: ~A~%" clipped-speed)
-    (debug-format "enforce-boid-speed-limits: new-velocity: ~A~%" new-velocity)
-    (set-point-velocity! boid new-velocity)))
+    (debug-format "enforce-boid-speed-limits: new-velocity: ~A ~A~%" new-velocity-x new-velocity-y)
+    (set-point-velocity-x! boid new-velocity-x)
+    (set-point-velocity-y! boid new-velocity-y)))
 
 (define (make-points n)
   (let ((number-of-points n))
     (unfold
      (lambda (seed) (>= seed number-of-points))
      (lambda (seed)
-       (make-point (make-rectangular (* *arena-width* (random:uniform))
-                                     (* *arena-height* (random:uniform)))
-                   (make-polar 0.01 (* TAU (random:uniform)))))
+       (let ((velocity (make-polar 0.01 (* TAU (random:uniform)))))
+         (make-point (* *arena-width* (random:uniform))
+                     (* *arena-height* (random:uniform))
+                     (real-part velocity)
+                     (imag-part velocity))))
      1+
      0)))
 
@@ -241,8 +309,8 @@
    (make-quad-tree *quad-tree-region* #:bucket-size 4)
    *points*
    (lambda (point)
-     (let ((x (real-part (point-position point)))
-           (y (imag-part (point-position point))))
+     (let ((x (point-position-x point))
+           (y (point-position-y point)))
        (values x y)))))
 
 ;;; update.
@@ -258,17 +326,18 @@
               (- speed)))
      (else
       (values x speed))))
-  (let* ((old-position (point-position point))
-         (old-velocity (point-velocity point))
-         (old-dx (real-part old-velocity))
-         (old-dy (imag-part old-velocity))
-         (new-position (+ old-position old-velocity))
-         (new-x (real-part new-position))
-         (new-y (imag-part new-position)))
-    (let-values (((new-x new-dx) (step-bump new-x old-dx))
-                 ((new-y new-dy) (step-bump new-y old-dy)))
-      (set-point-position! point (make-rectangular new-x new-y))
-      (set-point-velocity! point (make-rectangular new-dx new-dy)))))
+  (let* ((old-position-x (point-position-x point))
+         (old-position-y (point-position-y point))
+         (old-velocity-x (point-velocity-x point))
+         (old-velocity-y (point-velocity-y point))
+         (new-position-x (+ old-position-x old-velocity-x))
+         (new-position-y (+ old-position-y old-velocity-y)))
+    (let-values (((new-x new-dx) (step-bump new-position-x old-velocity-x))
+                 ((new-y new-dy) (step-bump new-position-y old-velocity-y)))
+      (set-point-position-x! point new-x)
+      (set-point-position-y! point new-y)
+      (set-point-velocity-x! point new-dx)
+      (set-point-velocity-y! point new-dy))))
 
 (define (update-quad-tree)
   (set! *quad-tree*
@@ -276,8 +345,8 @@
          (make-quad-tree *quad-tree-region* #:bucket-size 4)
          *points*
          (lambda (point)
-           (values (real-part (point-position point))
-                   (imag-part (point-position point)))))))
+           (values (point-position-x point)
+                   (point-position-y point))))))
 
 (define (update dt)
   (debug-format "~A ~A~%" dt (elapsed-time))
@@ -287,8 +356,8 @@
   (for-each (lambda (point)
               (cond
                (*use-quad-tree?*
-                (let ((visual-range-around-self (make-circle (real-part (point-position point))
-                                                             (imag-part (point-position point))
+                (let ((visual-range-around-self (make-circle (point-position-x point)
+                                                             (point-position-y point)
                                                              (boids-parameters-visual-range *boids-parameters*))))
                   (update-boid point
                                (quad-tree-locate-area *quad-tree*
@@ -303,8 +372,10 @@
                 (update-boid point *points*)))
               (turn-at-square-edges point)
               (enforce-boid-speed-limits point)
-              (set-point-position! point (+ (point-position point)
-                                            (point-velocity point))))
+              (set-point-position-x! point (+ (point-position-x point)
+                                              (point-velocity-x point)))
+              (set-point-position-y! point (+ (point-position-y point)
+                                              (point-velocity-y point))))
             *points*)
   )
 
@@ -313,13 +384,7 @@
 (define (draw alpha)
   (let ((width (window-width (current-window)))
         (height (window-height (current-window))))
-    (let ((result-items (quad-tree-locate-area
-                         *quad-tree*
-                         (lambda (quadrant)
-                           (region-intersects-region? quadrant *quad-tree-region*))
-                         (lambda (x y)
-                           (coordinate-in-region? x y *quad-tree-region*))))
-          (boundaries (quad-tree-boundaries *quad-tree*)))
+    (let ((boundaries (quad-tree-boundaries *quad-tree*)))
       (draw-canvas (make-canvas
                     (with-style ((stroke-color green)
                                  (stroke-width 0.1))
@@ -337,8 +402,8 @@
                                (stroke-width 5))
                               (apply stroke
                                      (map (lambda (point)
-                                            (circle (vec2 (* width (real-part (point-position point)))
-                                                          (* height (imag-part (point-position point))))
+                                            (circle (vec2 (* width (point-position-x point))
+                                                          (* height (point-position-y point)))
                                                     1))
                                           *points*)))))))
 
@@ -445,9 +510,20 @@
 
 ;;; run-game.
 
+(statprof-start)
 (run-game
  #:window-width *window-width*
  #:window-height *window-height*
  #:update update
  #:draw draw
  #:key-press key-press)
+(statprof-stop)
+
+(statprof-display)
+
+(gcprof (lambda () (run-game
+                    #:window-width *window-width*
+                    #:window-height *window-height*
+                    #:update update
+                    #:draw draw
+                    #:key-press key-press)))

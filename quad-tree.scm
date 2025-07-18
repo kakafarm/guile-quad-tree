@@ -99,6 +99,9 @@
   ))
 
 (define (average a b)
+  (unless (and (real? a) (inexact? a)
+               (real? b) (inexact? b))
+    (error "All arguments must be floats:" a b))
   (/ (+ a b) 2))
 
 (define (square x)
@@ -149,12 +152,12 @@ and also used when querying for points within an arbitrary region."
 (define (region-half-width region)
   (/ (- (region-x-high region)
         (region-x-low region))
-     2))
+     2.0))
 
 (define (region-half-height region)
   (/ (- (region-y-high region)
         (region-y-low region))
-     2))
+     2.0))
 
 (define-immutable-record-type <circle>
   (make-circle x y radius)
